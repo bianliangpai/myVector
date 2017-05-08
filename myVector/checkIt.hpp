@@ -36,5 +36,11 @@ struct checkIt<typename T,
 	using eleType = typename std::remove_pointer<T>::type;
 };
 
+template<typename T >
+struct identity
+{
+	using type = T;
+};
+
 #endif /* IS_ITERATOR_HPP */
 

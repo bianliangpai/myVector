@@ -2,19 +2,25 @@
 #include <vector>
 #include "myVector.hpp"
 
+struct Struct 
+{
+}S;
+
 int main()
 {
-	std::size_t vecL = 5;
-	int initVal = 10;
+	myVector<int> myVec;
+	for (int i = 0; i < 10; ++i)
+		myVec.push_back(i);
 
-	myVector<int> myVec(vecL, initVal);
-	myVector<int> myVed(vecL*2, initVal*2);
-	myVector<int> myVee(myVec);
-	myVee = myVed;
+	for (int i = 0; i < 5; ++i)
+		myVec.pop_back();
 
-	for (std::size_t i = 0; i < vecL; ++i)
+	myVec.resize(3);
+	myVec.resize(10);
+
+	for (std::size_t i = 0; i < myVec.size(); ++i)
 	{
-		std::cout << myVed[i] << std::endl;
+		std::cout << myVec[i] << std::endl;
 	}
 
 	return 0;
