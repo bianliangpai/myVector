@@ -30,7 +30,7 @@ struct checkIt<typename T,
 /* iterator is a pointer */
 template<typename T >
 struct checkIt<typename T,
-			   typename std::enable_if_t< std::is_pointer<T>::value > >
+			   std::enable_if_t< std::is_pointer<T>::value > >
 	: std::true_type
 {
 	using eleType = typename std::remove_pointer<T>::type;

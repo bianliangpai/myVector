@@ -30,7 +30,7 @@ class myVector
 {
 public:
 	typedef T                                                          value_type;
-	typedef Alloc                                                      allocator_type;
+	typedef typename std::allocator_traits<Alloc>::allocator_type      allocator_type;
 	typedef std::size_t                                                size_type;
 	typedef value_type&                                                reference;
 	typedef const value_type&                                          const_reference;
@@ -45,17 +45,19 @@ public:
 
 	/* construct functions */
 	/* 1 */
-	explicit myVector(const Alloc& alloc = Alloc()) 
+	explicit myVector() 
 		: start(nullptr), finish(nullptr), end_of_storage(nullptr),
-		  eleCnt(0), capCnt(0)
+		  eleCnt(0), capCnt(0), alloc(Alloc())
 		{
 		}
 
 
 	/* 2 http://www.cnblogs.com/youxin/archive/2012/06/15/2550546.html */
-	myVector(size_type count, const T& value, Alloc& alloc = Alloc())
+	myVector(size_type count, const T& value)
+		: start(nullptr), finish(nullptr), end_of_storage(nullptr),
+		  eleCnt(0), capCnt(0), alloc(Alloc())
 	{	
-		uninitialized_fill_n(count, alloc);
+		uninitialized_fill_n(count);
 
 		for (size_type i = 0; i < count; ++i)
 			*(start + i) = value;
@@ -63,15 +65,20 @@ public:
 
 
 	/* 3 */
-	explicit myVector(size_type count, Alloc& alloc = Alloc())
+	explicit myVector(size_type count)
+		: start(nullptr), finish(nullptr), end_of_storage(nullptr),
+		  eleCnt(0), capCnt(0), alloc(Alloc())
 	{
 		uninitialized_fill_n(count, alloc);
 	}
 
 
 	/* 4 */
-	template<typename InputIt>
-	myVector(InputIt first, InputIt last, Alloc& alloc = Alloc())
+	template<typename InputIt,
+			 std::decay_t<decltype(*InputIt)>* = nullptr >
+	myVector(InputIt first, InputIt last)
+		: start(nullptr), finish(nullptr), end_of_storage(nullptr),
+		  eleCnt(0), capCnt(0), alloc(Alloc())
 	{
 		if (!InputItValid<InputIt>())
 			return;
@@ -88,43 +95,38 @@ public:
 
 		uninitialized_fill_n(cnt, alloc);
 
-		for (iterator i = this->start; first != last; ++first, ++i)
-			*i = *first;
+		InputIt ii = first;
+		for (iterator i = this->start; ii != last; ++ii, ++i)
+			(*i) = (*ii);
 	}
 
 
 	/* 5: copy constructor */
 	myVector(const myVector& other)
+		: start(nullptr), finish(nullptr), end_of_storage(nullptr),
+		  eleCnt(0), capCnt(0), alloc(Alloc())
 	{
 		uninitialized_fill_n(other.size());
 		memcpy(this->start, other.begin(), other.size()*sizeof(size_type));
 	}
 
 
-	myVector(const myVector& other, Alloc& alloc)
-	{
-		uninitialized_fill_n(other.size(), alloc);
-		memcpy(this->start, other.begin(), other.size()*sizeof(size_type));
-	}
-
-
+	/* bug: cannot swap directly */
 	/* 6: move constructor */
 	myVector(myVector&& other)
+		: alloc(Alloc())
 	{
 		this->swap(other);
 	}
-
+	 
 
 	/* 7: allocator-extended move constructor */
-	myVector(myVector&& other, Alloc& alloc)
-	{	
-		uninitialized_fill_n(other.size(), alloc);
-		memcpy(this->start, other.begin(), other.size()*sizeof(size_type));
-	}
+
 
 
 	/* 8: constructs the container with the contents of the initializer list init */
-	myVector(std::initializer_list<T> init, Alloc& alloc = Alloc())
+	myVector(std::initializer_list<T> init)
+		: alloc(Alloc())
 	{
 		size_type cnt = size_type(init.end() - init.begin());
 
@@ -137,8 +139,7 @@ public:
 	/* destruct functions */
 	~myVector()
 	{
-		
-		alloc.deallocate(start, capCnt);
+		_destroy(this->start, this->end_of_storage);
 	}
 
 
@@ -242,7 +243,8 @@ public:
 
 
 	/* return the allocator associated with the container */
-	allocator_type get_allocator() const { return Alloc(); }
+	allocator_type get_allocator() const { return alloc; }
+
 
 	/* element access */
 	reference       at(size_type pos) { return *(this->start + pos); }
@@ -392,6 +394,8 @@ public:
 
 		if (checkShrink(this->eleCnt))
 			this->shrink(HALF(this->capCnt));
+
+		return this->start;
 	}
 
 
@@ -432,7 +436,7 @@ public:
 		if (this->empty())
 			return;
 
-		*(this->finish) = value_type();
+		*(this->finish-1) = value_type();
 
 		/* update */
 		--(this->eleCnt);
@@ -462,7 +466,7 @@ public:
 			if (diff > (this->capCnt - this->eleCnt))
 				this->move<copy_and_move_tag>(diff);
 
-			for (size_type i = 0; i < diff; ++i)
+			for (int i = 0; i < diff; ++i)
 				*(this->finish + i) = value;
 
 			/* update */
@@ -477,6 +481,7 @@ public:
 			/* update */
 			this->eleCnt -= diff;
 			this->finish -= diff;
+			iterator t = this->finish - 1;
 
 			if (checkShrink(this->eleCnt))
 				this->shrink(HALF(this->capCnt));
@@ -532,7 +537,7 @@ private:
 	}
 
 
-	void uninitialized_fill_n(size_type count, Alloc& alloc = Alloc())
+	void uninitialized_fill_n(size_type count)
 	{
 		size_type allocCnt = MIN(MAX(count * 2, initSize), this->max_size());
 		this->start = alloc.allocate(allocCnt);
@@ -545,13 +550,13 @@ private:
 
 
 	template<typename>
-	void move(size_type diff = size_type(), Alloc& alloc = Alloc())
+	void move(size_type diff = size_type())
 	{  // two ways to move
 	}
 	
 
 	template<>
-	void move<copy_and_move_tag>(size_type diff, Alloc& alloc)
+	void move<copy_and_move_tag>(size_type diff)
 	{
 		/* To do : bad alloc */
 		size_type allocCnt = (diff + this->capCnt) * 2;
@@ -561,7 +566,7 @@ private:
 		memcpy(tStart, this->start, sizeof(value_type)*this->eleCnt);
 
 		/* free memory */
-		alloc.deallocate(this->start, this->eleCnt);
+		this->_destroy(this->start, this->end_of_storage);
 
 		/* update */
 		this->start = tStart;
@@ -573,14 +578,14 @@ private:
 
 
 	template<>
-	void move<move_only_tag>(size_type diff, Alloc& alloc)
+	void move<move_only_tag>(size_type diff)
 	{
 		/* To do : bad alloc */
 		size_type allocCnt = (diff + this->capCnt) * 2;
 		iterator tStart = alloc.allocate(allocCnt);
 
 		/* free memory */
-		alloc.deallocate(this->start, this->eleCnt);
+		this->_destroy(this->start, this->end_of_storage);
 
 		/* update */
 		this->start = tStart;
@@ -593,13 +598,17 @@ private:
 
 	void shrink(size_type remainSize)
 	{
-		if (remainSize < this->eleCnt)
+		if (remainSize <= this->eleCnt)
 			return;
 
-		alloc.deallocate(start+remainSize, this->capCnt-remainSize);
+		if (remainSize >= this->capCnt)
+			return;
+
+		/* free memory */
+		this->_destroy(this->start+remainSize, this->end_of_storage);
 
 		/* update */
-		this->end_of_storage = start + remainSize;
+		this->end_of_storage = this->start + remainSize;
 		this->capCnt = remainSize;
 	}
 
@@ -646,6 +655,16 @@ private:
 		this->finish = this->start + this->eleCnt;
 
 		return new_pos;
+	}
+
+	void _destroy(iterator beg, iterator end)
+	{
+		for (iterator i = end - 1; i >= beg; )
+		{
+			iterator t = --i;
+			alloc.destroy(i);
+			i = t;
+		}
 	}
 
 };
